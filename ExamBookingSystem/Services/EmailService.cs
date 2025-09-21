@@ -1,5 +1,6 @@
 ﻿using SendGrid;
 using SendGrid.Helpers.Mail;
+using System.Text;
 
 namespace ExamBookingSystem.Services
 {
@@ -16,7 +17,7 @@ namespace ExamBookingSystem.Services
             _configuration = configuration;
             _logger = logger;
 
-            
+
             var apiKey = _configuration["SendGrid:ApiKey"];
             _isDemoMode = string.IsNullOrEmpty(apiKey) ||
                          apiKey.StartsWith("your-") ||
@@ -30,7 +31,7 @@ namespace ExamBookingSystem.Services
 
         public async Task<bool> SendEmailAsync(string to, string subject, string body, string? fromName = null)
         {
-           
+
             if (_isDemoMode)
             {
                 _logger.LogInformation("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━");
@@ -40,7 +41,7 @@ namespace ExamBookingSystem.Services
                 _logger.LogInformation($"👤 From: {fromName ?? "Exam Booking System"}");
                 _logger.LogInformation("📄 Body Preview:");
 
-                
+
                 var plainBody = body.Replace("<br>", "\n")
                                    .Replace("</p>", "\n")
                                    .Replace("</li>", "\n")
@@ -57,7 +58,7 @@ namespace ExamBookingSystem.Services
                 return await Task.FromResult(true);
             }
 
-            
+
             try
             {
                 var from = new EmailAddress("noreply@examwoodwood.com", fromName ?? "Exam Booking System");
@@ -80,6 +81,67 @@ namespace ExamBookingSystem.Services
             catch (Exception ex)
             {
                 _logger.LogError(ex, $"❌ Error sending email to {to}");
+                return false;
+            }
+        }
+
+        public async Task<bool> SendEmailWithAttachmentAsync(
+            string to,
+            string subject,
+            string htmlContent,
+            string attachmentContent,
+            string attachmentFilename,
+            string contentType,
+            string fromName = "Exam Booking System")
+        {
+            if (_isDemoMode)
+            {
+                _logger.LogInformation("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━");
+                _logger.LogInformation("📧 EMAIL WITH ATTACHMENT SIMULATION (Demo Mode)");
+                _logger.LogInformation($"📨 To: {to}");
+                _logger.LogInformation($"📝 Subject: {subject}");
+                _logger.LogInformation($"👤 From: {fromName}");
+                _logger.LogInformation($"📎 Attachment: {attachmentFilename} ({contentType})");
+                _logger.LogInformation($"📄 Attachment size: {attachmentContent.Length} characters");
+
+                var preview = htmlContent.Length > 200 ? htmlContent.Substring(0, 200) + "..." : htmlContent;
+                _logger.LogInformation($"📄 Body Preview: {preview}");
+
+                _logger.LogInformation("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━");
+                _logger.LogInformation("✅ Email with attachment simulated successfully!");
+
+                return await Task.FromResult(true);
+            }
+
+            try
+            {
+                var from = new EmailAddress("noreply@examwoodwood.com", fromName);
+                var toAddress = new EmailAddress(to);
+
+                var msg = MailHelper.CreateSingleEmail(from, toAddress, subject, null, htmlContent);
+
+                // Додаємо прикріплення
+                var attachmentBytes = Encoding.UTF8.GetBytes(attachmentContent);
+                var base64Content = Convert.ToBase64String(attachmentBytes);
+
+                msg.AddAttachment(attachmentFilename, base64Content, contentType);
+
+                var response = await _sendGridClient.SendEmailAsync(msg);
+
+                if (response.StatusCode == System.Net.HttpStatusCode.Accepted)
+                {
+                    _logger.LogInformation($"✅ Email with attachment sent successfully to {to}");
+                    return true;
+                }
+                else
+                {
+                    _logger.LogError($"❌ Failed to send email with attachment. Status: {response.StatusCode}");
+                    return false;
+                }
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, $"❌ Exception sending email with attachment to {to}");
                 return false;
             }
         }

@@ -167,20 +167,51 @@ namespace ExamBookingSystem.Controllers
                             response.ExaminerName,
                             response.ProposedDateTime ?? DateTime.UtcNow.AddDays(7));
 
-                        // Send calendar invitation if available
+                        // Send SMS confirmation if available
+                        if (_smsService != null && !string.IsNullOrEmpty(booking.StudentEmail))
+                        {
+                            // Get student phone from booking service - ВИПРАВЛЕНО
+                            var studentPhone = await GetStudentPhoneFromBooking(response.BookingId);
+                            if (!string.IsNullOrEmpty(studentPhone))
+                            {
+                                var smsMessage = $"Your checkride is confirmed! " +
+                                              $"Examiner: {response.ExaminerName}, " +
+                                              $"Date: {response.ProposedDateTime?.ToString("MMM dd, yyyy HH:mm") ?? "TBD"}. " +
+                                              $"Check your email for details.";
+
+                                await _smsService.SendSmsAsync(studentPhone, smsMessage);
+                                _logger.LogInformation($"SMS confirmation sent to student");
+                            }
+                        }
+
+                        // Generate and send calendar invitation
                         if (_calendarService != null && response.ProposedDateTime.HasValue)
                         {
-                            await SendCalendarInvitation(
+                            var icsContent = _calendarService.GenerateIcsFile(
+                                $"Aviation Checkride - {booking.ExamType}",
+                                response.ProposedDateTime.Value,
+                                response.ProposedDateTime.Value.AddHours(3),
+                                "Location TBD - Examiner will provide details",
+                                $"Checkride examination with {response.ExaminerName}.\\n" +
+                                $"Student: {response.StudentName}\\n" +
+                                $"Type: {booking.ExamType}\\n" +
+                                $"Please bring all required documents and logbooks.\\n" +
+                                $"Contact examiner at: {response.ExaminerEmail}"
+                            );
+
+                            await SendCalendarInvitationEmail(
                                 response.StudentEmail,
                                 response.StudentName,
                                 response.ExaminerName,
-                                response.ProposedDateTime.Value);
+                                response.ProposedDateTime.Value,
+                                icsContent,
+                                response.BookingId);
                         }
 
                         // Notify Slack
                         await _slackService.NotifyExaminerResponseAsync(
                             response.ExaminerName,
-                            "ACCEPTED (ASSIGNED!) 🎉",
+                            "ACCEPTED (ASSIGNED!)",
                             response.StudentName);
 
                         _logger.LogInformation($"Examiner {response.ExaminerName} successfully assigned to booking {response.BookingId}");
@@ -199,7 +230,7 @@ namespace ExamBookingSystem.Controllers
                         // Another examiner was faster
                         await _slackService.NotifyExaminerResponseAsync(
                             response.ExaminerName,
-                            "ACCEPTED (too late) ⏰",
+                            "ACCEPTED (too late)",
                             response.StudentName);
 
                         return Ok(new
@@ -214,7 +245,7 @@ namespace ExamBookingSystem.Controllers
                     // Log decline
                     await _slackService.NotifyExaminerResponseAsync(
                         response.ExaminerName,
-                        "DECLINED ❌",
+                        "DECLINED",
                         response.StudentName);
 
                     _logger.LogInformation($"Examiner {response.ExaminerName} declined booking {response.BookingId}");
@@ -237,7 +268,128 @@ namespace ExamBookingSystem.Controllers
                 return StatusCode(500, "Internal server error");
             }
         }
-        // Додайте ці методи в BookingController.cs
+
+        // Helper method to get student phone - ВИПРАВЛЕНО
+        private async Task<string?> GetStudentPhoneFromBooking(string bookingId)
+        {
+            try
+            {
+                // Отримуємо booking напряму з бази даних
+                using var scope = HttpContext.RequestServices.CreateScope();
+                var context = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+
+                if (!bookingId.StartsWith("BK") || !int.TryParse(bookingId.Substring(2), out int id))
+                    return null;
+
+                var booking = await context.BookingRequests
+                    .Where(b => b.Id == id)
+                    .Select(b => b.StudentPhone)
+                    .FirstOrDefaultAsync();
+
+                return booking;
+            }
+            catch
+            {
+                return null;
+            }
+        }
+
+        // New method for sending calendar invitation email - ВИПРАВЛЕНО
+        private async Task SendCalendarInvitationEmail(
+            string studentEmail,
+            string studentName,
+            string examinerName,
+            DateTime scheduledDateTime,
+            string icsContent,
+            string bookingId)
+        {
+            try
+            {
+                var subject = "Calendar Invitation - Your Checkride is Scheduled";
+
+                var body = $@"
+                    <div style='font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto;'>
+                        <div style='background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); padding: 20px; color: white; border-radius: 10px 10px 0 0;'>
+                            <h2 style='margin: 0;'>Calendar Invitation</h2>
+                        </div>
+                        
+                        <div style='padding: 20px; background: #f8f9fa; border: 1px solid #dee2e6; border-top: none;'>
+                            <p>Hello <strong>{studentName}</strong>,</p>
+                            
+                            <p>Your checkride has been scheduled!</p>
+                            
+                            <div style='background: white; padding: 20px; border-radius: 8px; margin: 20px 0;'>
+                                <h3 style='color: #28a745; margin-top: 0;'>Appointment Details</h3>
+                                <table style='width: 100%;'>
+                                    <tr>
+                                        <td style='padding: 8px 0;'><strong>Examiner:</strong></td>
+                                        <td>{examinerName}</td>
+                                    </tr>
+                                    <tr>
+                                        <td style='padding: 8px 0;'><strong>Date & Time:</strong></td>
+                                        <td>{scheduledDateTime:dddd, MMMM dd, yyyy at HH:mm}</td>
+                                    </tr>
+                                    <tr>
+                                        <td style='padding: 8px 0;'><strong>Duration:</strong></td>
+                                        <td>Approximately 3 hours</td>
+                                    </tr>
+                                </table>
+                            </div>
+                            
+                            <div style='background: #d1ecf1; border: 1px solid #bee5eb; padding: 15px; border-radius: 8px; margin: 20px 0;'>
+                                <p style='margin: 0; color: #0c5460;'>
+                                    <strong>Calendar File Attached</strong><br>
+                                    Download the attached .ics file and double-click it to add the event to your calendar (Outlook, Google Calendar, Apple Calendar, etc.).
+                                </p>
+                            </div>
+                            
+                            <div style='background: #fff3cd; border: 1px solid #ffeeba; padding: 15px; border-radius: 8px; margin: 20px 0;'>
+                                <h4 style='margin-top: 0; color: #856404;'>Important Reminders:</h4>
+                                <ul style='margin: 0; padding-left: 20px; color: #856404;'>
+                                    <li>Bring your logbook and all required documents</li>
+                                    <li>Ensure your medical certificate is current</li>
+                                    <li>Review the Practical Test Standards (PTS/ACS)</li>
+                                    <li>Get a good night's rest before the exam</li>
+                                    <li>Arrive at least 15 minutes early</li>
+                                </ul>
+                            </div>
+                            
+                            <p>If you need to reschedule or have any questions, please contact your examiner directly.</p>
+                            
+                            <p>Best of luck with your checkride!</p>
+                            
+                            <div style='margin-top: 30px; padding-top: 20px; border-top: 1px solid #dee2e6; color: #6c757d; font-size: 12px;'>
+                                <p>Exam Booking System<br>
+                                This is an automated message with your calendar invitation.</p>
+                            </div>
+                        </div>
+                    </div>";
+
+                // Відправляємо email з прикріпленим .ics файлом
+                var success = await _emailService.SendEmailWithAttachmentAsync(
+                    studentEmail,
+                    subject,
+                    body,
+                    icsContent,
+                    $"checkride_{bookingId}.ics",
+                    "text/calendar",
+                    "Exam Booking System"
+                );
+
+                if (success)
+                {
+                    _logger.LogInformation($"Calendar invitation email sent to {studentEmail}");
+                }
+                else
+                {
+                    _logger.LogWarning($"Failed to send calendar invitation to {studentEmail}");
+                }
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Error sending calendar invitation email");
+            }
+        }
 
         [HttpGet("debug/{bookingId}")]
         public async Task<ActionResult> DebugBooking(string bookingId)
@@ -275,14 +427,11 @@ namespace ExamBookingSystem.Controllers
         {
             try
             {
-                // Цей метод скидає бронювання в початковий стан для тестування
                 if (!bookingId.StartsWith("BK") || !int.TryParse(bookingId.Substring(2), out int id))
                     return BadRequest("Invalid booking ID format");
 
-                // Тільки для EntityFrameworkBookingService
                 if (_bookingService is EntityFrameworkBookingService efService)
                 {
-                    // Тут потрібно додати метод ResetBookingForTesting в EntityFrameworkBookingService
                     await efService.ResetBookingForTestingAsync(bookingId);
                     return Ok(new { message = $"Booking {bookingId} reset successfully" });
                 }
@@ -295,6 +444,7 @@ namespace ExamBookingSystem.Controllers
                 return StatusCode(500, ex.Message);
             }
         }
+
         [HttpGet("{bookingId}")]
         public async Task<ActionResult<BookingInfo>> GetBooking(string bookingId)
         {
@@ -312,84 +462,19 @@ namespace ExamBookingSystem.Controllers
                 return StatusCode(500, "Internal server error");
             }
         }
-        [HttpGet("diagnose/{bookingId}")]
-        public async Task<ActionResult> DiagnoseBooking(string bookingId)
+
+        [HttpGet("active")]
+        public async Task<ActionResult<List<BookingInfo>>> GetActiveBookings()
         {
             try
             {
-                if (_bookingService is EntityFrameworkBookingService efService)
-                {
-                    var diagnosticInfo = await efService.GetBookingDiagnosticInfoAsync(bookingId);
-                    // Перевіряємо доступність
-                    var isAvailable = await _bookingService.IsBookingAvailableAsync(bookingId);
-
-                    return Ok(new
-                    {
-                        diagnostic = diagnosticInfo,
-                        isAvailable = isAvailable,
-                        canBeAssigned = diagnosticInfo.AssignedExaminerId == null && isAvailable
-                    });
-                }
-
-                return BadRequest("Diagnostic not available for this service type");
+                var bookings = await _bookingService.GetActiveBookingsAsync();
+                return Ok(bookings);
             }
             catch (Exception ex)
             {
-                _logger.LogError(ex, $"Error diagnosing booking {bookingId}");
-                return StatusCode(500, ex.Message);
-            }
-        }
-            [HttpGet("active")]
-            public async Task<ActionResult<List<BookingInfo>>> GetActiveBookings()
-            {
-                try
-                {
-                    var bookings = await _bookingService.GetActiveBookingsAsync();
-                    return Ok(bookings);
-                }
-                catch (Exception ex)
-                {
-                    _logger.LogError(ex, "Error retrieving active bookings");
-                    return StatusCode(500, "Internal server error");
-                }
-            }
-        [HttpPost("fix/{bookingId}")]
-        public async Task<ActionResult> FixBooking(string bookingId)
-        {
-            try
-            {
-                if (!bookingId.StartsWith("BK") || !int.TryParse(bookingId.Substring(2), out int id))
-                    return BadRequest("Invalid booking ID");
-
-                using (var scope = HttpContext.RequestServices.CreateScope())
-                {
-                    var context = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
-
-                    var booking = await context.BookingRequests.FirstOrDefaultAsync(b => b.Id == id);
-                    if (booking == null)
-                        return NotFound("Booking not found");
-
-                    // Використовуємо повний namespace
-                    booking.AssignedExaminerId = null;
-                    booking.Status = ExamBookingSystem.Models.BookingStatus.ExaminersContacted;
-                    booking.ScheduledDate = null;
-                    booking.ScheduledTime = null;
-                    booking.UpdatedAt = DateTime.UtcNow;
-
-                    await context.SaveChangesAsync();
-
-                    return Ok(new
-                    {
-                        message = "Booking reset successfully",
-                        status = booking.Status.ToString(),
-                        assignedExaminerId = booking.AssignedExaminerId
-                    });
-                }
-            }
-            catch (Exception ex)
-            {
-                _logger.LogError(ex, $"Error fixing booking {bookingId}");
-                return StatusCode(500, ex.Message);
+                _logger.LogError(ex, "Error retrieving active bookings");
+                return StatusCode(500, "Internal server error");
             }
         }
 
@@ -424,26 +509,69 @@ namespace ExamBookingSystem.Controllers
             }
         }
 
-        private async Task SendCalendarInvitation(string studentEmail, string studentName, string examinerName, DateTime scheduledDateTime)
+        [HttpGet("diagnose/{bookingId}")]
+        public async Task<ActionResult> DiagnoseBooking(string bookingId)
         {
             try
             {
-                if (_calendarService == null)
-                    return;
+                if (_bookingService is EntityFrameworkBookingService efService)
+                {
+                    var diagnosticInfo = await efService.GetBookingDiagnosticInfoAsync(bookingId);
+                    var isAvailable = await _bookingService.IsBookingAvailableAsync(bookingId);
 
-                var icsContent = _calendarService.GenerateIcsFile(
-                    $"Aviation Checkride with {examinerName}",
-                    scheduledDateTime,
-                    scheduledDateTime.AddHours(_configuration.GetValue("ApplicationSettings:DefaultExamDurationHours", 2)),
-                    "TBD - Examiner will provide location details",
-                    $"Checkride examination with designated examiner {examinerName}. " +
-                    $"Please confirm location and bring required documents.");
+                    return Ok(new
+                    {
+                        diagnostic = diagnosticInfo,
+                        isAvailable = isAvailable,
+                        canBeAssigned = diagnosticInfo?.AssignedExaminerId == null && isAvailable
+                    });
+                }
 
-                _logger.LogInformation($"Calendar invitation generated for {studentName} - {scheduledDateTime}");
+                return BadRequest("Diagnostic not available for this service type");
             }
             catch (Exception ex)
             {
-                _logger.LogError(ex, "Error generating calendar invitation");
+                _logger.LogError(ex, $"Error diagnosing booking {bookingId}");
+                return StatusCode(500, ex.Message);
+            }
+        }
+
+        [HttpPost("fix/{bookingId}")]
+        public async Task<ActionResult> FixBooking(string bookingId)
+        {
+            try
+            {
+                if (!bookingId.StartsWith("BK") || !int.TryParse(bookingId.Substring(2), out int id))
+                    return BadRequest("Invalid booking ID");
+
+                using (var scope = HttpContext.RequestServices.CreateScope())
+                {
+                    var context = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+
+                    var booking = await context.BookingRequests.FirstOrDefaultAsync(b => b.Id == id);
+                    if (booking == null)
+                        return NotFound("Booking not found");
+
+                    booking.AssignedExaminerId = null;
+                    booking.Status = ExamBookingSystem.Models.BookingStatus.ExaminersContacted;
+                    booking.ScheduledDate = null;
+                    booking.ScheduledTime = null;
+                    booking.UpdatedAt = DateTime.UtcNow;
+
+                    await context.SaveChangesAsync();
+
+                    return Ok(new
+                    {
+                        message = "Booking reset successfully",
+                        status = booking.Status.ToString(),
+                        assignedExaminerId = booking.AssignedExaminerId
+                    });
+                }
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, $"Error fixing booking {bookingId}");
+                return StatusCode(500, ex.Message);
             }
         }
     }
