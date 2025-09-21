@@ -25,7 +25,7 @@ namespace ExamBookingSystem.Services
             // Demo mode якщо credentials тестові, пусті або неправильні
             _isDemoMode = string.IsNullOrEmpty(accountSid) ||
                          string.IsNullOrEmpty(authToken) ||
-                         accountSid.StartsWith("AC40a8dcb17a692efd72883b3f2baa14e8") ||
+                         accountSid.StartsWith("AC40a8dcb") ||
                          authToken == "c5b35cbc4d501dfb27fdbbc1a0069a29" ||
                          accountSid.Contains("YOUR_");
 
