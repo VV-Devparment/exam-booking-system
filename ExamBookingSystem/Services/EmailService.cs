@@ -1,6 +1,7 @@
 ﻿using SendGrid;
 using SendGrid.Helpers.Mail;
 using System.Text;
+using System.Text.RegularExpressions;
 
 namespace ExamBookingSystem.Services
 {
@@ -17,21 +18,26 @@ namespace ExamBookingSystem.Services
             _configuration = configuration;
             _logger = logger;
 
-
             var apiKey = _configuration["SendGrid:ApiKey"];
             _isDemoMode = string.IsNullOrEmpty(apiKey) ||
                          apiKey.StartsWith("your-") ||
+                         apiKey.StartsWith("demo-") ||
+                         apiKey.StartsWith("SG.dummy") ||
+                         apiKey.Contains("YOUR_") ||
                          apiKey.Length < 20;
 
             if (_isDemoMode)
             {
                 _logger.LogWarning("📧 Email Service running in DEMO MODE - emails will be simulated");
             }
+            else
+            {
+                _logger.LogInformation("📧 Email Service initialized with real SendGrid API");
+            }
         }
 
         public async Task<bool> SendEmailAsync(string to, string subject, string body, string? fromName = null)
         {
-
             if (_isDemoMode)
             {
                 _logger.LogInformation("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━");
@@ -41,23 +47,18 @@ namespace ExamBookingSystem.Services
                 _logger.LogInformation($"👤 From: {fromName ?? "Exam Booking System"}");
                 _logger.LogInformation("📄 Body Preview:");
 
-
-                var plainBody = body.Replace("<br>", "\n")
-                                   .Replace("</p>", "\n")
-                                   .Replace("</li>", "\n")
-                                   .Replace("<[^>]*>", "");
-
+                // Clean HTML and show preview
+                var plainBody = CleanHtmlForPreview(body);
                 var preview = plainBody.Length > 300
                     ? plainBody.Substring(0, 300) + "..."
                     : plainBody;
 
                 _logger.LogInformation(preview);
                 _logger.LogInformation("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━");
-                _logger.LogInformation("✅ Email simulated successfully!");
+                _logger.LogInformation("✅ Email sent successfully! (simulated)");
 
                 return await Task.FromResult(true);
             }
-
 
             try
             {
@@ -86,64 +87,65 @@ namespace ExamBookingSystem.Services
         }
 
         public async Task<bool> SendEmailWithAttachmentAsync(
-			string to, 
-			string subject, 
-			string htmlContent, 
-			string attachmentContent, 
-			string attachmentFilename, 
-			string contentType,
-			string fromName = "Exam Booking System")
-		{
-			if (_isDemoMode)
-			{
-				_logger.LogInformation("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━");
-				_logger.LogInformation("📧 EMAIL WITH ATTACHMENT SIMULATION (Demo Mode)");
-				_logger.LogInformation($"📨 To: {to}");
-				_logger.LogInformation($"📝 Subject: {subject}");
-				_logger.LogInformation($"👤 From: {fromName}");
-				_logger.LogInformation($"📎 Attachment: {attachmentFilename} ({contentType})");
-				_logger.LogInformation($"📄 Attachment size: {attachmentContent.Length} characters");
-				
-				var preview = htmlContent.Length > 200 ? htmlContent.Substring(0, 200) + "..." : htmlContent;
-				_logger.LogInformation($"📄 Body Preview: {preview}");
-				
-				_logger.LogInformation("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━");
-				_logger.LogInformation("✅ Email with attachment simulated successfully!");
-				return await Task.FromResult(true);
-			}
+            string to,
+            string subject,
+            string htmlContent,
+            string attachmentContent,
+            string attachmentFilename,
+            string contentType,
+            string fromName = "Exam Booking System")
+        {
+            if (_isDemoMode)
+            {
+                _logger.LogInformation("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━");
+                _logger.LogInformation("📧 EMAIL WITH ATTACHMENT SIMULATION (Demo Mode)");
+                _logger.LogInformation($"📨 To: {to}");
+                _logger.LogInformation($"📝 Subject: {subject}");
+                _logger.LogInformation($"👤 From: {fromName}");
+                _logger.LogInformation($"📎 Attachment: {attachmentFilename} ({contentType})");
+                _logger.LogInformation($"📄 Attachment size: {attachmentContent.Length} characters");
 
-			try
-			{
-				var from = new EmailAddress("noreply@examwoodwood.com", fromName);
-				var toAddress = new EmailAddress(to);
+                var preview = CleanHtmlForPreview(htmlContent);
+                var bodyPreview = preview.Length > 200 ? preview.Substring(0, 200) + "..." : preview;
+                _logger.LogInformation($"📄 Body Preview: {bodyPreview}");
 
-				var msg = MailHelper.CreateSingleEmail(from, toAddress, subject, null, htmlContent);
+                _logger.LogInformation("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━");
+                _logger.LogInformation("✅ Email with attachment sent successfully! (simulated)");
+                return await Task.FromResult(true);
+            }
 
-				// Додаємо прикріплення
-				var attachmentBytes = Encoding.UTF8.GetBytes(attachmentContent);
-				var base64Content = Convert.ToBase64String(attachmentBytes);
-				
-				msg.AddAttachment(attachmentFilename, base64Content, contentType);
+            try
+            {
+                var from = new EmailAddress("noreply@examwoodwood.com", fromName);
+                var toAddress = new EmailAddress(to);
 
-				var response = await _sendGridClient.SendEmailAsync(msg);
+                var msg = MailHelper.CreateSingleEmail(from, toAddress, subject, null, htmlContent);
 
-				if (response.StatusCode == System.Net.HttpStatusCode.Accepted)
-				{
-					_logger.LogInformation($"✅ Email with attachment sent successfully to {to}");
-					return true;
-				}
-				else
-				{
-					_logger.LogError($"❌ Failed to send email with attachment. Status: {response.StatusCode}");
-					return false;
-				}
-			}
-			catch (Exception ex)
-			{
-				_logger.LogError(ex, $"❌ Exception sending email with attachment to {to}");
-				return false;
-			}
-		}
+                // Add attachment
+                var attachmentBytes = Encoding.UTF8.GetBytes(attachmentContent);
+                var base64Content = Convert.ToBase64String(attachmentBytes);
+
+                msg.AddAttachment(attachmentFilename, base64Content, contentType);
+
+                var response = await _sendGridClient.SendEmailAsync(msg);
+
+                if (response.StatusCode == System.Net.HttpStatusCode.Accepted)
+                {
+                    _logger.LogInformation($"✅ Email with attachment sent successfully to {to}");
+                    return true;
+                }
+                else
+                {
+                    _logger.LogError($"❌ Failed to send email with attachment. Status: {response.StatusCode}");
+                    return false;
+                }
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, $"❌ Exception sending email with attachment to {to}");
+                return false;
+            }
+        }
 
         public async Task<bool> SendExaminerContactEmailAsync(
             string examinerEmail,
@@ -197,7 +199,18 @@ namespace ExamBookingSystem.Services
                 </div>";
 
             _logger.LogInformation($"📤 Sending examiner contact email to {examinerName} ({examinerEmail})");
-            return await SendEmailAsync(examinerEmail, subject, body, "Exam Booking System");
+            var result = await SendEmailAsync(examinerEmail, subject, body, "Exam Booking System");
+            
+            if (result)
+            {
+                _logger.LogInformation($"✅ Examiner contact email sent successfully");
+            }
+            else
+            {
+                _logger.LogWarning($"❌ Failed to send examiner contact email");
+            }
+            
+            return result;
         }
 
         public async Task<bool> SendStudentConfirmationEmailAsync(
@@ -263,7 +276,40 @@ namespace ExamBookingSystem.Services
                 </div>";
 
             _logger.LogInformation($"📤 Sending confirmation email to {studentName} ({studentEmail})");
-            return await SendEmailAsync(studentEmail, subject, body, "Exam Booking System");
+            var result = await SendEmailAsync(studentEmail, subject, body, "Exam Booking System");
+            
+            if (result)
+            {
+                _logger.LogInformation($"✅ Student confirmation email sent successfully");
+            }
+            else
+            {
+                _logger.LogWarning($"❌ Failed to send student confirmation email");
+            }
+            
+            return result;
+        }
+
+        private string CleanHtmlForPreview(string html)
+        {
+            if (string.IsNullOrEmpty(html))
+                return "";
+
+            // Remove HTML tags
+            var cleanText = Regex.Replace(html, @"<[^>]*>", "");
+            
+            // Replace common HTML entities
+            cleanText = cleanText.Replace("&nbsp;", " ")
+                                .Replace("&amp;", "&")
+                                .Replace("&lt;", "<")
+                                .Replace("&gt;", ">")
+                                .Replace("&quot;", "\"")
+                                .Replace("&#39;", "'");
+
+            // Clean up extra whitespace
+            cleanText = Regex.Replace(cleanText, @"\s+", " ").Trim();
+
+            return cleanText;
         }
     }
 }

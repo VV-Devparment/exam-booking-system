@@ -161,16 +161,24 @@ namespace ExamBookingSystem.Controllers
                     if (assigned)
                     {
                         // Send confirmation email to student
-                        await _emailService.SendStudentConfirmationEmailAsync(
+                        var emailResult = await _emailService.SendStudentConfirmationEmailAsync(
                             response.StudentEmail,
                             response.StudentName,
                             response.ExaminerName,
                             response.ProposedDateTime ?? DateTime.UtcNow.AddDays(7));
 
+                        if (emailResult)
+                        {
+                            _logger.LogInformation($"✅ Student confirmation email sent successfully");
+                        }
+                        else
+                        {
+                            _logger.LogWarning($"❌ Failed to send student confirmation email");
+                        }
+
                         // Send SMS confirmation if available
                         if (_smsService != null && !string.IsNullOrEmpty(booking.StudentEmail))
                         {
-                            // Get student phone from booking service - ВИПРАВЛЕНО
                             var studentPhone = await GetStudentPhoneFromBooking(response.BookingId);
                             if (!string.IsNullOrEmpty(studentPhone))
                             {
@@ -179,8 +187,19 @@ namespace ExamBookingSystem.Controllers
                                               $"Date: {response.ProposedDateTime?.ToString("MMM dd, yyyy HH:mm") ?? "TBD"}. " +
                                               $"Check your email for details.";
 
-                                await _smsService.SendSmsAsync(studentPhone, smsMessage);
-                                _logger.LogInformation($"SMS confirmation sent to student");
+                                var smsResult = await _smsService.SendSmsAsync(studentPhone, smsMessage);
+                                if (smsResult)
+                                {
+                                    _logger.LogInformation($"✅ SMS confirmation sent to student successfully");
+                                }
+                                else
+                                {
+                                    _logger.LogWarning($"❌ Failed to send SMS confirmation to student");
+                                }
+                            }
+                            else
+                            {
+                                _logger.LogWarning("📱 No phone number available for SMS confirmation");
                             }
                         }
 
@@ -206,13 +225,20 @@ namespace ExamBookingSystem.Controllers
                                 response.ProposedDateTime.Value,
                                 icsContent,
                                 response.BookingId);
+
+                            _logger.LogInformation($"📅 Calendar invitation processing completed");
                         }
 
                         // Notify Slack
-                        await _slackService.NotifyExaminerResponseAsync(
+                        var slackResult = await _slackService.NotifyExaminerResponseAsync(
                             response.ExaminerName,
                             "ACCEPTED (ASSIGNED!)",
                             response.StudentName);
+
+                        if (slackResult)
+                        {
+                            _logger.LogInformation($"✅ Slack notification sent successfully");
+                        }
 
                         _logger.LogInformation($"Examiner {response.ExaminerName} successfully assigned to booking {response.BookingId}");
 
@@ -269,12 +295,11 @@ namespace ExamBookingSystem.Controllers
             }
         }
 
-        // Helper method to get student phone - ВИПРАВЛЕНО
+        // Helper method to get student phone
         private async Task<string?> GetStudentPhoneFromBooking(string bookingId)
         {
             try
             {
-                // Отримуємо booking напряму з бази даних
                 using var scope = HttpContext.RequestServices.CreateScope();
                 var context = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
 
@@ -294,7 +319,7 @@ namespace ExamBookingSystem.Controllers
             }
         }
 
-        // New method for sending calendar invitation email - ВИПРАВЛЕНО
+        // Method for sending calendar invitation email
         private async Task SendCalendarInvitationEmail(
             string studentEmail,
             string studentName,
@@ -365,7 +390,6 @@ namespace ExamBookingSystem.Controllers
                         </div>
                     </div>";
 
-                // Відправляємо email з прикріпленим .ics файлом
                 var success = await _emailService.SendEmailWithAttachmentAsync(
                     studentEmail,
                     subject,
@@ -378,11 +402,11 @@ namespace ExamBookingSystem.Controllers
 
                 if (success)
                 {
-                    _logger.LogInformation($"Calendar invitation email sent to {studentEmail}");
+                    _logger.LogInformation($"✅ Calendar invitation email sent successfully to {studentEmail}");
                 }
                 else
                 {
-                    _logger.LogWarning($"Failed to send calendar invitation to {studentEmail}");
+                    _logger.LogWarning($"❌ Failed to send calendar invitation email to {studentEmail}");
                 }
             }
             catch (Exception ex)
@@ -493,11 +517,11 @@ namespace ExamBookingSystem.Controllers
 
                 if (success)
                 {
-                    _logger.LogInformation($"Successfully contacted examiner {examiner.Name} for booking {bookingId}");
+                    _logger.LogInformation($"✅ Successfully contacted examiner {examiner.Name} for booking {bookingId}");
                 }
                 else
                 {
-                    _logger.LogWarning($"Failed to contact examiner {examiner.Name} for booking {bookingId}");
+                    _logger.LogWarning($"❌ Failed to contact examiner {examiner.Name} for booking {bookingId}");
                     await _slackService.NotifyErrorAsync(
                         $"Failed to contact examiner",
                         $"Could not send email to {examiner.Name} ({examiner.Email})");

@@ -1,5 +1,5 @@
 ﻿const API_BASE = '/api';
-const stripe = Stripe('pk_test_51S92nmLDEFw9YnAkt4DiLXEHMZv5TMjEc3JGYp7LvFhOOFx7rHFHXDyW3uNaHxZNpNeU6shjqKRlJCq3Iei6m4iz00oCL0glRB');
+const stripe = Stripe('pk_test_51S7ZSCLSumIf2sloNewlIWsGz6Mbm4GnB8e3DQvX32MP99eneIFrhv5OxtL75yvvzoOa8etP8HHzVhs7zfAOZY8d00B8XsRw0o');
 
 document.getElementById('bookingForm').addEventListener('submit', async (e) => {
     e.preventDefault();

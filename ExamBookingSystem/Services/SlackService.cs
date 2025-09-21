@@ -8,6 +8,7 @@ namespace ExamBookingSystem.Services
         private readonly IConfiguration _configuration;
         private readonly ILogger<SlackService> _logger;
         private readonly string? _webhookUrl;
+        private readonly bool _isDemoMode;
 
         public SlackService(HttpClient httpClient, IConfiguration configuration, ILogger<SlackService> logger)
         {
@@ -15,10 +16,31 @@ namespace ExamBookingSystem.Services
             _configuration = configuration;
             _logger = logger;
             _webhookUrl = _configuration["Slack:WebhookUrl"];
+
+            // Demo mode якщо webhook URL тестовий, пустий або неправильний
+            _isDemoMode = string.IsNullOrEmpty(_webhookUrl) ||
+                         _webhookUrl.Contains("YOUR_SLACK_WEBHOOK_URL_HERE") ||
+                         _webhookUrl.StartsWith("https://hooks.slack.com/services/T09FRR33UTV");
+
+            if (_isDemoMode)
+            {
+                _logger.LogWarning("💬 Slack Service running in DEMO MODE - notifications will be simulated");
+            }
         }
 
         public async Task<bool> SendNotificationAsync(string message, string? channel = null)
         {
+            if (_isDemoMode)
+            {
+                _logger.LogInformation("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━");
+                _logger.LogInformation("💬 SLACK NOTIFICATION SIMULATION (Demo Mode)");
+                _logger.LogInformation($"📢 Channel: {channel ?? "#exam-bookings"}");
+                _logger.LogInformation($"💬 Message: {message}");
+                _logger.LogInformation("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━");
+                _logger.LogInformation("✅ Slack notification sent successfully! (simulated)");
+                return await Task.FromResult(true);
+            }
+
             if (string.IsNullOrEmpty(_webhookUrl))
             {
                 _logger.LogWarning("Slack webhook URL not configured");
@@ -52,6 +74,19 @@ namespace ExamBookingSystem.Services
 
         public async Task<bool> NotifyNewBookingAsync(string studentName, string examType, DateTime preferredDate)
         {
+            if (_isDemoMode)
+            {
+                _logger.LogInformation("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━");
+                _logger.LogInformation("💬 SLACK NEW BOOKING NOTIFICATION SIMULATION (Demo Mode)");
+                _logger.LogInformation($"🆕 NEW BOOKING ALERT");
+                _logger.LogInformation($"👤 Student: {studentName}");
+                _logger.LogInformation($"📚 Exam Type: {examType}");
+                _logger.LogInformation($"📅 Preferred Date: {preferredDate:yyyy-MM-dd}");
+                _logger.LogInformation("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━");
+                _logger.LogInformation("✅ Slack notification sent successfully! (simulated)");
+                return await Task.FromResult(true);
+            }
+
             var message = $"🆕 *New Exam Booking*\n" +
                          $"Student: {studentName}\n" +
                          $"Exam Type: {examType}\n" +
@@ -62,7 +97,20 @@ namespace ExamBookingSystem.Services
 
         public async Task<bool> NotifyExaminerResponseAsync(string examinerName, string response, string studentName)
         {
-            var emoji = response.ToLower() == "accepted" ? "✅" : "❌";
+            if (_isDemoMode)
+            {
+                _logger.LogInformation("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━");
+                _logger.LogInformation("💬 SLACK EXAMINER RESPONSE NOTIFICATION SIMULATION (Demo Mode)");
+                _logger.LogInformation($"👨‍🏫 EXAMINER RESPONSE");
+                _logger.LogInformation($"Examiner: {examinerName}");
+                _logger.LogInformation($"Response: {response}");
+                _logger.LogInformation($"Student: {studentName}");
+                _logger.LogInformation("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━");
+                _logger.LogInformation("✅ Slack notification sent successfully! (simulated)");
+                return await Task.FromResult(true);
+            }
+
+            var emoji = response.ToLower().Contains("accepted") ? "✅" : "❌";
             var message = $"{emoji} *Examiner Response*\n" +
                          $"Examiner: {examinerName}\n" +
                          $"Response: {response}\n" +
@@ -73,6 +121,20 @@ namespace ExamBookingSystem.Services
 
         public async Task<bool> NotifyErrorAsync(string error, string? details = null)
         {
+            if (_isDemoMode)
+            {
+                _logger.LogInformation("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━");
+                _logger.LogInformation("💬 SLACK ERROR NOTIFICATION SIMULATION (Demo Mode)");
+                _logger.LogInformation($"🚨 ERROR: {error}");
+                if (!string.IsNullOrEmpty(details))
+                {
+                    _logger.LogInformation($"Details: {details}");
+                }
+                _logger.LogInformation("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━");
+                _logger.LogInformation("✅ Slack error notification sent successfully! (simulated)");
+                return await Task.FromResult(true);
+            }
+
             var message = $"🚨 *System Error*\n{error}";
             if (!string.IsNullOrEmpty(details))
             {
