@@ -19,50 +19,22 @@ namespace ExamBookingSystem.Services
             _logger = logger;
 
             var apiKey = _configuration["SendGrid:ApiKey"];
-            _isDemoMode = string.IsNullOrEmpty(apiKey) ||
-                         apiKey.StartsWith("your-") ||
-                         apiKey.StartsWith("demo-") ||
-                         apiKey.StartsWith("SG.dummy") ||
-                         apiKey.Contains("YOUR_") ||
-                         apiKey.Length < 20;
 
-            if (_isDemoMode)
-            {
-                _logger.LogWarning("📧 Email Service running in DEMO MODE - emails will be simulated");
-            }
-            else
-            {
-                _logger.LogInformation("📧 Email Service initialized with real SendGrid API");
-            }
+          
         }
 
         public async Task<bool> SendEmailAsync(string to, string subject, string body, string? fromName = null)
         {
             if (_isDemoMode)
             {
-                _logger.LogInformation("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━");
-                _logger.LogInformation("📧 EMAIL SIMULATION (Demo Mode)");
-                _logger.LogInformation($"📨 To: {to}");
-                _logger.LogInformation($"📝 Subject: {subject}");
-                _logger.LogInformation($"👤 From: {fromName ?? "Exam Booking System"}");
-                _logger.LogInformation("📄 Body Preview:");
-
-                // Clean HTML and show preview
-                var plainBody = CleanHtmlForPreview(body);
-                var preview = plainBody.Length > 300
-                    ? plainBody.Substring(0, 300) + "..."
-                    : plainBody;
-
-                _logger.LogInformation(preview);
-                _logger.LogInformation("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━");
-                _logger.LogInformation("✅ Email sent successfully! (simulated)");
-
+                _logger.LogInformation($"📧 DEMO: Email to {to} - {subject}");
                 return await Task.FromResult(true);
             }
 
             try
             {
-                var from = new EmailAddress("noreply@examwoodwood.com", fromName ?? "Exam Booking System");
+                // ЗМІНІТЬ From адрес на верифікований
+                var from = new EmailAddress("contact@mom-ai-agency.site", fromName ?? "Exam Booking System");
                 var toEmail = new EmailAddress(to);
                 var msg = MailHelper.CreateSingleEmail(from, toEmail, subject, body, body);
 
@@ -75,7 +47,8 @@ namespace ExamBookingSystem.Services
                 }
                 else
                 {
-                    _logger.LogError($"❌ Failed to send email. Status: {response.StatusCode}");
+                    var responseBody = await response.Body.ReadAsStringAsync();
+                    _logger.LogError($"❌ Failed to send email. Status: {response.StatusCode}, Body: {responseBody}");
                     return false;
                 }
             }
@@ -116,7 +89,7 @@ namespace ExamBookingSystem.Services
 
             try
             {
-                var from = new EmailAddress("noreply@examwoodwood.com", fromName);
+                var from = new EmailAddress("contact@mom-ai-agency.site", fromName ?? "Exam Booking System");
                 var toAddress = new EmailAddress(to);
 
                 var msg = MailHelper.CreateSingleEmail(from, toAddress, subject, null, htmlContent);

@@ -17,15 +17,8 @@ namespace ExamBookingSystem.Services
             _logger = logger;
             _webhookUrl = _configuration["Slack:WebhookUrl"];
 
-            // Demo mode якщо webhook URL тестовий, пустий або неправильний
-            _isDemoMode = string.IsNullOrEmpty(_webhookUrl) ||
-                         _webhookUrl.Contains("YOUR_SLACK_WEBHOOK_URL_HERE") ||
-                         _webhookUrl.StartsWith("https://hooks.slack.com/services/T09FRR33UTV");
-
-            if (_isDemoMode)
-            {
-                _logger.LogWarning("💬 Slack Service running in DEMO MODE - notifications will be simulated");
-            }
+            // Видаліть demo mode логіку
+            _isDemoMode = false;
         }
 
         public async Task<bool> SendNotificationAsync(string message, string? channel = null)

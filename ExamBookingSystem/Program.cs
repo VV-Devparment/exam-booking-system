@@ -4,6 +4,7 @@ using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
 using Npgsql;
 using SendGrid;
+AppContext.SetSwitch("Npgsql.EnableLegacyTimestampBehavior", true);
 
 var builder = WebApplication.CreateBuilder(args);
 
@@ -66,6 +67,7 @@ builder.Services.AddSwaggerGen(c =>
 });
 
 // Entity Framework конфігурація
+// Entity Framework конфігурація
 builder.Services.AddDbContext<ApplicationDbContext>(options =>
 {
     options.UseNpgsql(connectionString, npgsqlOptions =>
@@ -113,7 +115,8 @@ builder.Services.AddScoped<IBookingService, EntityFrameworkBookingService>();
 builder.Services.AddScoped<ILocationService, LocationService>();
 builder.Services.AddScoped<IExaminerRotationService, ExaminerRotationService>();
 builder.Services.AddHttpContextAccessor();
-
+// Додайте після інших сервісів:
+builder.Services.AddScoped<IStripeService, StripeService>();
 // CORS для розробки
 builder.Services.AddCors(options =>
 {
@@ -288,6 +291,4 @@ Console.WriteLine($"      Google Maps: {(!string.IsNullOrEmpty(builder.Configura
 Console.WriteLine($"      MapBox: {(!string.IsNullOrEmpty(builder.Configuration["Geocoding:MapBox:AccessToken"]) ? "Yes" : "No")}");
 Console.WriteLine();
 
-app.Urls.Clear();
-app.Urls.Add("http://0.0.0.0:8080");
 app.Run();

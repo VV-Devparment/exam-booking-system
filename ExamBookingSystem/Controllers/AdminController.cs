@@ -1,7 +1,8 @@
-﻿using Microsoft.AspNetCore.Mvc;
+﻿using BCrypt.Net;
 using ExamBookingSystem.Data;
+using ExamBookingSystem.Services;
+using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
-using BCrypt.Net;
 
 namespace ExamBookingSystem.Controllers
 {
@@ -11,11 +12,12 @@ namespace ExamBookingSystem.Controllers
     {
         private readonly ApplicationDbContext _context;
         private readonly ILogger<AdminController> _logger;
-
-        public AdminController(ApplicationDbContext context, ILogger<AdminController> logger)
+        private readonly IStripeService _stripeService;
+        public AdminController(ApplicationDbContext context, ILogger<AdminController> logger, IStripeService stripeService)
         {
             _context = context;
             _logger = logger;
+            _stripeService = stripeService;
         }
 
         [HttpPost("login")]
@@ -175,7 +177,7 @@ namespace ExamBookingSystem.Controllers
         }
 
         [HttpPost("process-refund/{bookingId}")]
-        public async Task<ActionResult> ProcessRefund(string bookingId)
+        public async Task<ActionResult> ProcessRefund(string bookingId, [FromBody] RefundRequestDto? refundRequest = null)
         {
             try
             {
@@ -191,22 +193,144 @@ namespace ExamBookingSystem.Controllers
                 if (!booking.IsPaid)
                     return BadRequest("Booking is not paid");
 
-                if (booking.AssignedExaminerId != null)
-                    return BadRequest("Cannot refund - examiner already assigned");
+                if (booking.Status == Models.BookingStatus.Refunded)
+                    return BadRequest("Booking already refunded");
 
+                // Process Stripe refund
+                if (!string.IsNullOrEmpty(booking.PaymentIntentId))
+                {
+                    var refundAmount = refundRequest?.Amount ?? booking.Amount;
+                    var refundReason = refundRequest?.Reason ?? "No examiner available";
+
+                    var refundSuccess = await _stripeService.ProcessRefundAsync(
+                        booking.PaymentIntentId,
+                        refundAmount,
+                        refundReason);
+
+                    if (!refundSuccess)
+                    {
+                        return StatusCode(500, "Failed to process Stripe refund");
+                    }
+                }
+
+                // Update booking status
                 booking.Status = Models.BookingStatus.Refunded;
                 booking.UpdatedAt = DateTime.UtcNow;
+
+                // Add action log
+                var actionLog = new Models.ActionLog
+                {
+                    BookingRequestId = booking.Id,
+                    ActionType = Models.ActionType.RefundProcessed,
+                    Description = $"Refund processed: {refundRequest?.Reason ?? "Manual refund"}",
+                    Details = System.Text.Json.JsonSerializer.Serialize(new
+                    {
+                        Amount = booking.Amount,
+                        PaymentIntentId = booking.PaymentIntentId,
+                        Reason = refundRequest?.Reason
+                    }),
+                    CreatedAt = DateTime.UtcNow
+                };
+                _context.ActionLogs.Add(actionLog);
 
                 await _context.SaveChangesAsync();
 
                 _logger.LogInformation($"Refund processed for booking {bookingId}");
 
-                return Ok(new { message = "Refund processed successfully" });
+                return Ok(new
+                {
+                    message = "Refund processed successfully",
+                    refundAmount = booking.Amount,
+                    bookingId = bookingId
+                });
             }
             catch (Exception ex)
             {
                 _logger.LogError(ex, $"Error processing refund for {bookingId}");
                 return StatusCode(500, "Failed to process refund");
+            }
+        }
+
+        [HttpGet("examiner-responses/{bookingId}")]
+        public async Task<ActionResult> GetBookingExaminerResponses(string bookingId)
+        {
+            try
+            {
+                _logger.LogInformation($"Getting examiner responses for booking: {bookingId}");
+
+                if (!bookingId.StartsWith("BK") || !int.TryParse(bookingId.Substring(2), out int id))
+                {
+                    _logger.LogWarning($"Invalid booking ID format: {bookingId}");
+                    return BadRequest("Invalid booking ID");
+                }
+
+                // Перевіряємо чи існує бронювання
+                var bookingExists = await _context.BookingRequests
+                    .AnyAsync(b => b.Id == id);
+
+                if (!bookingExists)
+                {
+                    _logger.LogWarning($"Booking not found: {bookingId}");
+                    return NotFound("Booking not found");
+                }
+
+                // Отримуємо відповіді екзаменаторів
+                var responses = await _context.ExaminerResponses
+                    .Where(r => r.BookingRequestId == id)
+                    .Select(r => new
+                    {
+                        ExaminerId = r.ExaminerId,
+                        ExaminerName = "Unknown", // Тимчасово, бо зв'язок з Examiner відключений
+                        ExaminerEmail = "unknown@example.com", // Тимчасово
+                        Response = r.Response.ToString(),
+                        ContactedAt = r.ContactedAt,
+                        RespondedAt = r.RespondedAt,
+                        ResponseMessage = r.ResponseMessage ?? "",
+                        ProposedDate = r.ProposedDate,
+                        ProposedTime = r.ProposedTime ?? "",
+                        ProposedLocation = r.ProposedLocation ?? "",
+                        IsWinner = r.IsWinner
+                    })
+                    .ToListAsync();
+
+                // Отримуємо історію дій
+                var actionLogs = await _context.ActionLogs
+                    .Where(a => a.BookingRequestId == id)
+                    .OrderBy(a => a.CreatedAt)
+                    .Select(a => new
+                    {
+                        ActionType = a.ActionType.ToString(),
+                        Description = a.Description ?? "",
+                        Details = a.Details ?? "",
+                        CreatedAt = a.CreatedAt,
+                        UserId = a.UserId ?? "",
+                        IpAddress = a.IpAddress ?? ""
+                    })
+                    .ToListAsync();
+
+                var result = new
+                {
+                    BookingId = bookingId,
+                    ExaminerResponses = responses, // ЗАВЖДИ буде масивом
+                    ActionHistory = actionLogs,    // ЗАВЖДИ буде масивом
+                    TotalContacted = responses.Count,
+                    TotalResponded = responses.Count(r => r.RespondedAt != null),
+                    AcceptedCount = responses.Count(r => r.Response == "Accepted"),
+                    DeclinedCount = responses.Count(r => r.Response == "Declined")
+                };
+
+                _logger.LogInformation($"Returning data for {bookingId}: {responses.Count} responses, {actionLogs.Count} action logs");
+
+                return Ok(result);
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, $"Error getting examiner responses for {bookingId}");
+                return StatusCode(500, new
+                {
+                    error = "Failed to retrieve examiner responses",
+                    details = ex.Message
+                });
             }
         }
 
@@ -248,7 +372,11 @@ namespace ExamBookingSystem.Controllers
         public string Email { get; set; } = string.Empty;
         public string Password { get; set; } = string.Empty;
     }
-
+    public class RefundRequestDto
+    {
+        public decimal? Amount { get; set; }
+        public string? Reason { get; set; }
+    }
     public class CreateAdminDto
     {
         public string Email { get; set; } = string.Empty;

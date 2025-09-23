@@ -18,25 +18,14 @@ namespace ExamBookingSystem.Services
         {
             _configuration = configuration;
             _logger = logger;
-
             var accountSid = _configuration["Twilio:AccountSid"];
             var authToken = _configuration["Twilio:AuthToken"];
-            
-            // Demo mode якщо credentials тестові, пусті або неправильні
-            _isDemoMode = string.IsNullOrEmpty(accountSid) ||
-                         string.IsNullOrEmpty(authToken) ||
-                         accountSid.StartsWith("AC40a8dcb") ||
-                         authToken == "c5b35cbc4d501dfb27fdbbc1a0069a29" ||
-                         accountSid.Contains("YOUR_");
 
-            if (_isDemoMode)
-            {
-                _logger.LogWarning("📱 SMS Service running in DEMO MODE - messages will be simulated");
-            }
-            else
-            {
-                TwilioClient.Init(accountSid, authToken);
-            }
+            
+            _isDemoMode = false;
+
+            TwilioClient.Init(accountSid, authToken);
+            _logger.LogInformation("📱 SMS Service initialized with Twilio");
         }
 
         public async Task<bool> SendSmsAsync(string to, string message)

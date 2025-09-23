@@ -20,9 +20,9 @@ namespace ExamBookingSystem.DTOs
         [Phone]
         public string StudentPhone { get; set; } = string.Empty;
 
-        // Авіаційні поля
+        // Aircraft information
         [Required]
-        public string AircraftType { get; set; } = string.Empty;
+        public string AircraftType { get; set; } = "Cessna 172"; // Додайте Required атрибут
 
         [Required]
         public string CheckRideType { get; set; } = string.Empty;
@@ -34,28 +34,21 @@ namespace ExamBookingSystem.DTOs
 
         public bool WillingToFly { get; set; }
 
-        public string DateOption { get; set; } = "ASAP";
+        // New availability window fields
+        public string DateOption { get; set; } = "ASAP"; // "ASAP" or "DATE_RANGE"
 
         public DateTime? StartDate { get; set; }
 
         public DateTime? EndDate { get; set; }
 
-        public string? PreferredExaminer { get; set; }
+        // New additional fields
+        public string? FtnNumber { get; set; }
 
-        public bool AdditionalRating { get; set; }
-
-        public bool IsRecheck { get; set; }
+        public string? ExamId { get; set; }
 
         public string? AdditionalNotes { get; set; }
 
-        // Поля після match
-        public string? CertificateNumber { get; set; }
-
-        public string? FtnNumber { get; set; }
-
-        public string? WrittenLast4 { get; set; }
-
-        // Старі поля для сумісності
+        // Legacy fields for compatibility
         public string StudentAddress { get; set; } = string.Empty;
 
         public string ExamType { get; set; } = string.Empty;
@@ -65,5 +58,17 @@ namespace ExamBookingSystem.DTOs
         public string? PreferredTime { get; set; }
 
         public string? SpecialRequirements { get; set; }
+
+        // Additional optional fields
+        public string? PreferredExaminer { get; set; }
+
+        public bool AdditionalRating { get; set; }
+
+        public bool IsRecheck { get; set; }
+
+        // Fields for after examiner match
+        public string? CertificateNumber { get; set; }
+
+        public string? WrittenLast4 { get; set; }
     }
 }

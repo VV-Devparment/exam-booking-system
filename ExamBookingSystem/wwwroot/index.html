@@ -3,38 +3,43 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta http-equiv="Content-Security-Policy" content="default-src 'self' 'unsafe-inline' 'unsafe-eval' https: data: blob:;">
     <title>Aviation Checkride Booking System</title>
     <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
     <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.0/font/bootstrap-icons.css">
-    <link rel="stylesheet" href="styles.css">
+    <link rel="stylesheet" href="styles-updated.css">
     <script src="https://js.stripe.com/v3/"></script>
 </head>
 <body>
     <!-- Navigation -->
-    <nav class="navbar navbar-dark bg-primary">
+    <nav class="navbar navbar-expand-lg navbar-dark shadow-sm">
         <div class="container">
-            <span class="navbar-brand mb-0 h1">✈️ Aviation Checkride System</span>
-            <button class="btn btn-outline-light" onclick="window.showAdminLogin()">
-                <i class="bi bi-shield-lock"></i> Admin
-            </button>
+            <a class="navbar-brand fw-bold" href="#">
+                <i class="bi bi-airplane-fill"></i> Aviation Checkride System
+            </a>
+            <div class="ms-auto">
+                <button class="btn btn-outline-light btn-sm" onclick="showAdminLogin()">
+                    <i class="bi bi-shield-lock"></i> Admin
+                </button>
+            </div>
         </div>
     </nav>
 
     <!-- Tab Navigation -->
     <div class="container mt-4">
-        <ul class="nav nav-tabs nav-fill mb-4">
+        <ul class="nav nav-pills nav-fill mb-4 shadow-sm rounded-pill bg-white p-2" id="mainTabs">
             <li class="nav-item">
-                <a class="nav-link active" data-bs-toggle="tab" href="#studentTab">
+                <a class="nav-link active rounded-pill" data-bs-toggle="tab" href="#studentTab">
                     <i class="bi bi-person-badge"></i> Student Booking
                 </a>
             </li>
             <li class="nav-item">
-                <a class="nav-link" data-bs-toggle="tab" href="#examinerTab">
+                <a class="nav-link rounded-pill" data-bs-toggle="tab" href="#examinerTab">
                     <i class="bi bi-clipboard-check"></i> Examiner Portal
                 </a>
             </li>
             <li class="nav-item d-none" id="adminTabBtn">
-                <a class="nav-link" data-bs-toggle="tab" href="#adminTab">
+                <a class="nav-link rounded-pill" data-bs-toggle="tab" href="#adminTab">
                     <i class="bi bi-speedometer2"></i> Admin Dashboard
                 </a>
             </li>
@@ -45,14 +50,14 @@
             <!-- Student Tab -->
             <div class="tab-pane fade show active" id="studentTab">
                 <div id="studentForm" class="row justify-content-center">
-                    <div class="col-md-10">
-                        <div class="card shadow">
-                            <div class="card-header bg-primary text-white">
-                                <h4 class="mb-0">Book Your Checkride</h4>
+                    <div class="col-lg-10">
+                        <div class="card shadow-lg border-0 rounded-lg animate-slide-in">
+                            <div class="card-header bg-gradient-primary text-white">
+                                <h4 class="mb-0"><i class="bi bi-calendar-plus"></i> Book Your Checkride</h4>
                             </div>
-                            <div class="card-body">
+                            <div class="card-body p-4">
                                 <div class="alert alert-info mb-4">
-                                    <strong>💳 Payment Required:</strong> $100 USD will be charged to proceed with booking
+                                    <i class="bi bi-info-circle"></i> <strong>Payment Required:</strong> $100 USD will be charged to proceed with booking
                                 </div>
 
                                 <form id="bookingForm">
@@ -75,7 +80,27 @@
                                         </div>
                                         <div class="col-md-6 mb-3">
                                             <label for="phone" class="form-label">Phone *</label>
-                                            <input type="tel" class="form-control" id="phone" required>
+                                            <div class="input-group">
+                                                <select class="form-select" id="countryCode" style="max-width: 120px;">
+                                                    <option value="+1" selected>🇺🇸 +1</option>
+                                                    <option value="+44">🇬🇧 +44</option>
+                                                    <option value="+33">🇫🇷 +33</option>
+                                                    <option value="+49">🇩🇪 +49</option>
+                                                    <option value="+34">🇪🇸 +34</option>
+                                                    <option value="+39">🇮🇹 +39</option>
+                                                    <option value="+81">🇯🇵 +81</option>
+                                                    <option value="+86">🇨🇳 +86</option>
+                                                    <option value="+91">🇮🇳 +91</option>
+                                                    <option value="+61">🇦🇺 +61</option>
+                                                    <option value="+55">🇧🇷 +55</option>
+                                                    <option value="+52">🇲🇽 +52</option>
+                                                    <option value="+7">🇷🇺 +7</option>
+                                                    <option value="+380">🇺🇦 +380</option>
+                                                </select>
+                                                <input type="tel" class="form-control" id="phone"
+                                                       placeholder="(555) 123-4567"
+                                                       pattern="[0-9\s\(\)\-]+" required>
+                                            </div>
                                         </div>
                                     </div>
 
@@ -88,17 +113,18 @@
                                             <input type="text" class="form-control" id="aircraftType" placeholder="e.g. Cessna 172" required>
                                         </div>
                                         <div class="col-md-6 mb-3">
-                                            <label for="checkRideType" class="form-label">Checkride Type *</label>
+                                            <label for="checkRideType" class="form-label">CHECKRIDE TYPE (Airplane only) *</label>
                                             <select class="form-select" id="checkRideType" required>
                                                 <option value="">Select checkride type</option>
-                                                <option value="Private">Private Pilot</option>
+                                                <option value="Private Pilot Single Engine">Private Pilot Single Engine</option>
+                                                <option value="Private Pilot Multi Engine Add">Private Pilot Multi Engine Add</option>
                                                 <option value="Instrument">Instrument Rating</option>
-                                                <option value="Commercial">Commercial Pilot</option>
+                                                <option value="Commercial Pilot Single Engine">Commercial Pilot Single Engine</option>
+                                                <option value="Commercial Pilot Multi Engine">Commercial Pilot Multi Engine</option>
                                                 <option value="CFI">CFI Initial</option>
                                                 <option value="CFII">CFII</option>
                                                 <option value="MEI">MEI</option>
                                                 <option value="ATP">ATP</option>
-                                                <option value="MultiEngine">Multi-Engine</option>
                                             </select>
                                         </div>
                                     </div>
@@ -122,14 +148,51 @@
                                         <div class="form-check">
                                             <input class="form-check-input" type="checkbox" id="willingToFly">
                                             <label class="form-check-label" for="willingToFly">
-                                                I am willing to fly to the examiner's location
+                                                I am willing to fly to examiner's location within the selected radius
                                             </label>
                                         </div>
                                     </div>
 
+                                    <hr class="my-4">
+                                    <h5 class="mb-3">Availability Window</h5>
+
                                     <div class="mb-3">
-                                        <label for="additionalNotes" class="form-label">Additional Notes</label>
-                                        <textarea class="form-control" id="additionalNotes" rows="3"></textarea>
+                                        <div class="form-check">
+                                            <input class="form-check-input" type="checkbox" id="asapCheckbox" checked onchange="toggleDateRange()">
+                                            <label class="form-check-label" for="asapCheckbox">
+                                                ASAP (any date available)
+                                            </label>
+                                        </div>
+                                    </div>
+
+                                    <div id="dateRangeSection" class="row" style="display: none;">
+                                        <div class="col-md-6 mb-3">
+                                            <label for="startDate" class="form-label">Start Date</label>
+                                            <input type="date" class="form-control" id="startDate">
+                                        </div>
+                                        <div class="col-md-6 mb-3">
+                                            <label for="endDate" class="form-label">End Date</label>
+                                            <input type="date" class="form-control" id="endDate">
+                                        </div>
+                                    </div>
+
+                                    <hr class="my-4">
+                                    <h5 class="mb-3">Additional Information</h5>
+
+                                    <div class="row">
+                                        <div class="col-md-6 mb-3">
+                                            <label for="ftnNumber" class="form-label">FTN Number</label>
+                                            <input type="text" class="form-control" id="ftnNumber" placeholder="Enter FTN Number">
+                                        </div>
+                                        <div class="col-md-6 mb-3">
+                                            <label for="examId" class="form-label">Exam ID (if applicable)</label>
+                                            <input type="text" class="form-control" id="examId" placeholder="Enter Exam ID">
+                                        </div>
+                                    </div>
+
+                                    <div class="mb-3">
+                                        <label for="additionalNotes" class="form-label">Additional Message/Notes</label>
+                                        <textarea class="form-control" id="additionalNotes" rows="3" placeholder="Add any additional information or requirements"></textarea>
                                     </div>
 
                                     <div class="d-grid">
@@ -169,10 +232,57 @@
             <!-- Examiner Tab -->
             <div class="tab-pane fade" id="examinerTab">
                 <div class="row">
+                    <div class="col-md-12 mb-4">
+                        <!-- Available Bookings with Filters -->
+                        <div class="card shadow-lg border-0 animate-slide-in">
+                            <div class="card-header bg-gradient-primary text-white">
+                                <h5 class="mb-0"><i class="bi bi-list-ul"></i> Available Bookings</h5>
+                            </div>
+                            <div class="card-body">
+                                <!-- Filters -->
+                                <div class="row mb-3">
+                                    <div class="col-md-3">
+                                        <input type="email" id="examinerEmailFilter" class="form-control"
+                                               placeholder="Your email *" required>
+                                    </div>
+                                    <div class="col-md-3">
+                                        <select id="examTypeFilter" class="form-select">
+                                            <option value="">All Exam Types</option>
+                                            <option value="Private">Private</option>
+                                            <option value="Instrument">Instrument</option>
+                                            <option value="Commercial">Commercial</option>
+                                            <option value="CFI">CFI</option>
+                                            <option value="ATP">ATP</option>
+                                        </select>
+                                    </div>
+                                    <div class="col-md-2">
+                                        <input type="text" id="stateFilter" class="form-control"
+                                               placeholder="State (e.g., TX)">
+                                    </div>
+                                    <div class="col-md-2">
+                                        <input type="date" id="dateFromFilter" class="form-control">
+                                    </div>
+                                    <div class="col-md-2">
+                                        <button class="btn btn-primary w-100" onclick="loadFilteredBookings()">
+                                            <i class="bi bi-search"></i> Search
+                                        </button>
+                                    </div>
+                                </div>
+
+                                <!-- Results -->
+                                <div id="availableBookingsList">
+                                    <p class="text-muted">Enter your email and click Search to see available bookings</p>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="row mt-4">
                     <div class="col-md-6">
-                        <div class="card shadow">
-                            <div class="card-header bg-info text-white">
-                                <h5 class="mb-0">Examiner Response Panel</h5>
+                        <div class="card shadow-lg border-0 animate-slide-in">
+                            <div class="card-header bg-gradient-info text-white">
+                                <h5 class="mb-0"><i class="bi bi-reply"></i> Respond to Booking</h5>
                             </div>
                             <div class="card-body">
                                 <form id="examinerResponseForm">
@@ -233,12 +343,14 @@
                     </div>
 
                     <div class="col-md-6">
-                        <div class="card shadow">
-                            <div class="card-header bg-secondary text-white">
-                                <h5 class="mb-0">Active Bookings</h5>
+                        <div class="card shadow-lg border-0 animate-slide-in">
+                            <div class="card-header bg-gradient-success text-white">
+                                <h5 class="mb-0"><i class="bi bi-list-check"></i> All Active Bookings</h5>
                             </div>
                             <div class="card-body">
-                                <button class="btn btn-primary mb-3" onclick="loadActiveBookings()">🔄 Refresh</button>
+                                <button class="btn btn-success mb-3" onclick="loadActiveBookings()">
+                                    <i class="bi bi-arrow-clockwise"></i> Refresh
+                                </button>
                                 <div id="activeBookingsList"></div>
                             </div>
                         </div>
@@ -248,7 +360,6 @@
 
             <!-- Admin Tab -->
             <div class="tab-pane fade" id="adminTab">
-                <!-- Admin Dashboard content will be loaded here dynamically -->
                 <div id="adminContent">
                     <div class="text-center py-5">
                         <div class="spinner-border" role="status">
@@ -290,16 +401,47 @@
     <script src="app-with-payment.js"></script>
     <script src="admin.js"></script>
     <script>
-        // Глобальна функція для показу модального вікна логіну
-        function showAdminLogin() {
-            const modalElement = document.getElementById('adminLoginModal');
-            if (modalElement) {
-                const modal = new bootstrap.Modal(modalElement);
-                modal.show();
+        // Toggle date range visibility
+        function toggleDateRange() {
+            const asapCheckbox = document.getElementById('asapCheckbox');
+            const dateRangeSection = document.getElementById('dateRangeSection');
+
+            if (asapCheckbox.checked) {
+                dateRangeSection.style.display = 'none';
+                document.getElementById('startDate').value = '';
+                document.getElementById('endDate').value = '';
+            } else {
+                dateRangeSection.style.display = 'block';
+                const tomorrow = new Date();
+                tomorrow.setDate(tomorrow.getDate() + 1);
+                const nextWeek = new Date();
+                nextWeek.setDate(nextWeek.getDate() + 7);
+
+                document.getElementById('startDate').value = tomorrow.toISOString().split('T')[0];
+                document.getElementById('endDate').value = nextWeek.toISOString().split('T')[0];
             }
         }
 
-        // Обробка форми логіну
+        // Initialize date inputs
+        document.addEventListener('DOMContentLoaded', function () {
+            const tomorrow = new Date();
+            tomorrow.setDate(tomorrow.getDate() + 1);
+            tomorrow.setHours(10, 0, 0, 0);
+            const dateStr = tomorrow.toISOString().slice(0, 16);
+
+            const proposedDateTime = document.getElementById('proposedDateTime');
+            if (proposedDateTime) {
+                proposedDateTime.value = dateStr;
+            }
+        });
+
+        // Global function to show admin login
+        function showAdminLogin() {
+            const modal = new bootstrap.Modal(document.getElementById('adminLoginModal'));
+            modal.show();
+        }
+
+        // Admin login form handling
         document.addEventListener('DOMContentLoaded', function () {
             const loginForm = document.getElementById('adminLoginForm');
             if (loginForm) {
@@ -326,20 +468,15 @@
                             const result = await response.json();
 
                             if (result.success) {
-                                // Показати вкладку адміна
                                 document.getElementById('adminTabBtn').classList.remove('d-none');
-
-                                // Закрити модальне вікно
                                 const modal = bootstrap.Modal.getInstance(document.getElementById('adminLoginModal'));
                                 if (modal) modal.hide();
 
-                                // Переключитися на адмін вкладку
                                 const adminTab = new bootstrap.Tab(document.querySelector('#adminTabBtn a'));
                                 adminTab.show();
 
-                                // Завантажити адмін панель якщо є функція
-                                if (typeof loadAdminDashboard === 'function') {
-                                    loadAdminDashboard();
+                                if (typeof window.loadAdminDashboard === 'function') {
+                                    await window.loadAdminDashboard();
                                 }
                             }
                         } else {

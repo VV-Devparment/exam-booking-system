@@ -44,6 +44,41 @@ namespace ExamBookingSystem.Controllers
             return Ok(new { distanceKm = Math.Round(distance, 2) });
         }
 
+        [HttpPost("test-real-services")]
+        public async Task<ActionResult> TestRealServices()
+        {
+            var results = new Dictionary<string, object>();
+
+            // Test Email
+            try
+            {
+                var emailResult = await _emailService.SendEmailAsync(
+                    "test@example.com",
+                    "Test Real Email",
+                    "<h1>This is a real test email from the system</h1>"
+                );
+                results["Email"] = new { Success = emailResult, Message = "Email service tested" };
+            }
+            catch (Exception ex)
+            {
+                results["Email"] = new { Success = false, Error = ex.Message };
+            }
+
+            // Test Slack
+            try
+            {
+                var slackResult = await _slackService.SendNotificationAsync(
+                    "🧪 Test notification from real system"
+                );
+                results["Slack"] = new { Success = slackResult, Message = "Slack service tested" };
+            }
+            catch (Exception ex)
+            {
+                results["Slack"] = new { Success = false, Error = ex.Message };
+            }
+
+            return Ok(results);
+        }
         [HttpGet("location/examiners")]
         public async Task<ActionResult> TestNearbyExaminers(
             [FromQuery] double latitude = 50.4501,

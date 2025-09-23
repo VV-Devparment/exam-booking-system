@@ -18,19 +18,20 @@ namespace ExamBookingSystem.Services
             _context = context;
             _logger = logger;
         }
+
         public class BookingDiagnosticInfo
         {
-            public string BookingId { get; set; }
-            public string Status { get; set; }
+            public string? BookingId { get; set; }
+            public string? Status { get; set; }
             public int? AssignedExaminerId { get; set; }
-            public string AssignedExaminerName { get; set; }
+            public string? AssignedExaminerName { get; set; }
             public bool IsPaid { get; set; }
             public DateTime CreatedAt { get; set; }
             public DateTime UpdatedAt { get; set; }
             public int ResponseCount { get; set; }
             public int AcceptedResponses { get; set; }
             public int DeclinedResponses { get; set; }
-            public string Error { get; set; }
+            public string? Error { get; set; }
         }
 
         public async Task<string> CreateBookingAsync(CreateBookingDto request)
@@ -47,15 +48,15 @@ namespace ExamBookingSystem.Services
                     StudentPhone = request.StudentPhone,
                     StudentAddress = request.PreferredAirport,
                     ExamType = request.CheckRideType,
-                    PreferredDate = request.StartDate ?? DateTime.UtcNow.AddDays(7),
+                    PreferredDate = DateTime.SpecifyKind(request.StartDate ?? DateTime.Now.AddDays(7), DateTimeKind.Unspecified),
                     PreferredTime = "10:00",
                     SpecialRequirements = request.AdditionalNotes,
                     Status = Models.BookingStatus.Created,
                     Amount = 100.00m,
                     Currency = "USD",
                     IsPaid = false,
-                    CreatedAt = DateTime.UtcNow,
-                    UpdatedAt = DateTime.UtcNow,
+                    CreatedAt = DateTime.SpecifyKind(DateTime.Now, DateTimeKind.Unspecified),
+                    UpdatedAt = DateTime.SpecifyKind(DateTime.Now, DateTimeKind.Unspecified),
                     Latitude = 0,
                     Longitude = 0
                 };
@@ -404,6 +405,7 @@ namespace ExamBookingSystem.Services
                 return false;
             }
         }
+
         public async Task<BookingDiagnosticInfo> GetBookingDiagnosticInfoAsync(string bookingId)
         {
             try
@@ -442,6 +444,7 @@ namespace ExamBookingSystem.Services
                 return new BookingDiagnosticInfo { Error = ex.Message };
             }
         }
+
         private async Task AddActionLogAsync(int bookingRequestId, int? examinerId, ActionType actionType, string description, string? details = null)
         {
             var actionLog = new ActionLog
@@ -503,6 +506,7 @@ namespace ExamBookingSystem.Services
                 Models.BookingStatus.Scheduled => Services.BookingStatus.Scheduled,
                 Models.BookingStatus.Completed => Services.BookingStatus.Completed,
                 Models.BookingStatus.Cancelled => Services.BookingStatus.Cancelled,
+                Models.BookingStatus.Refunded => Services.BookingStatus.Cancelled,
                 _ => Services.BookingStatus.Created
             };
         }

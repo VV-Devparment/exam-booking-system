@@ -4,7 +4,10 @@ using ExamBookingSystem.Models;
 using ExamBookingSystem.Services;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
+using SendGrid.Helpers.Mail;
 using BookingStatus = ExamBookingSystem.Models.BookingStatus;
+using ExamBookingSystem.Data;
+// Замініть початок класу BookingController на це:
 
 namespace ExamBookingSystem.Controllers
 {
@@ -12,6 +15,7 @@ namespace ExamBookingSystem.Controllers
     [Route("api/[controller]")]
     public class BookingController : ControllerBase
     {
+        private readonly ApplicationDbContext _context; // ДОДАЙТЕ ЦЮ ЛІНІЮ
         private readonly IEmailService _emailService;
         private readonly ISlackService _slackService;
         private readonly ILocationService _locationService;
@@ -22,6 +26,7 @@ namespace ExamBookingSystem.Controllers
         private readonly IConfiguration _configuration;
 
         public BookingController(
+            ApplicationDbContext context, // ДОДАЙТЕ ЦЕЙ ПАРАМЕТР
             IEmailService emailService,
             ISlackService slackService,
             ILocationService locationService,
@@ -31,6 +36,7 @@ namespace ExamBookingSystem.Controllers
             ISmsService? smsService = null,
             ICalendarService? calendarService = null)
         {
+            _context = context; // ДОДАЙТЕ ЦЮ ЛІНІЮ
             _emailService = emailService;
             _slackService = slackService;
             _locationService = locationService;
@@ -296,15 +302,17 @@ namespace ExamBookingSystem.Controllers
         }
 
         // Helper method to get student phone
+        // Замініть метод GetStudentPhoneFromBooking на:
         private async Task<string?> GetStudentPhoneFromBooking(string bookingId)
         {
             try
             {
-                using var scope = HttpContext.RequestServices.CreateScope();
-                var context = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
-
                 if (!bookingId.StartsWith("BK") || !int.TryParse(bookingId.Substring(2), out int id))
                     return null;
+
+                // Використовуємо ServiceProvider для отримання контексту
+                using var scope = HttpContext.RequestServices.CreateScope();
+                var context = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
 
                 var booking = await context.BookingRequests
                     .Where(b => b.Id == id)
@@ -559,6 +567,113 @@ namespace ExamBookingSystem.Controllers
                 return StatusCode(500, ex.Message);
             }
         }
+        [HttpGet("available-for-examiner")]
+        public async Task<ActionResult> GetAvailableBookingsForExaminer(
+       [FromQuery] string? examinerEmail = null,
+       [FromQuery] string? examType = null,
+       [FromQuery] string? state = null,
+       [FromQuery] DateTime? dateFrom = null,
+       [FromQuery] DateTime? dateTo = null)
+        {
+            try
+            {
+                _logger.LogInformation($"Filtering bookings: examinerEmail={examinerEmail}, examType={examType}, state={state}, dateFrom={dateFrom}");
+
+                var query = _context.BookingRequests
+                    .Where(b => b.Status == Models.BookingStatus.ExaminersContacted ||
+                               b.Status == Models.BookingStatus.PaymentConfirmed)
+                    .Where(b => b.AssignedExaminerId == null);
+
+                // Filter by exam type
+                if (!string.IsNullOrEmpty(examType))
+                {
+                    query = query.Where(b => b.ExamType.Contains(examType));
+                    _logger.LogInformation($"Applied exam type filter: {examType}");
+                }
+
+                // Filter by state (from address) - ВИПРАВЛЕНО
+                if (!string.IsNullOrEmpty(state))
+                {
+                    var upperState = state.ToUpper();
+                    query = query.Where(b => b.StudentAddress.ToUpper().Contains(upperState));
+                    _logger.LogInformation($"Applied state filter: {state}");
+                }
+
+                // Filter by date range - ВИПРАВЛЕНО
+                if (dateFrom.HasValue)
+                {
+                    var dateFromUnspecified = DateTime.SpecifyKind(dateFrom.Value.Date, DateTimeKind.Unspecified);
+                    query = query.Where(b => b.PreferredDate >= dateFromUnspecified);
+                    _logger.LogInformation($"Applied date from filter: {dateFrom}");
+                }
+                if (dateTo.HasValue)
+                {
+                    var dateToUnspecified = DateTime.SpecifyKind(dateTo.Value.Date.AddDays(1).AddTicks(-1), DateTimeKind.Unspecified);
+                    query = query.Where(b => b.PreferredDate <= dateToUnspecified);
+                    _logger.LogInformation($"Applied date to filter: {dateTo}");
+                }
+
+                // Examiner email filter - ГОЛОВНЕ ВИПРАВЛЕННЯ
+                if (!string.IsNullOrEmpty(examinerEmail))
+                {
+                    var examiner = await _context.Examiners
+                        .FirstOrDefaultAsync(e => e.Email.ToLower() == examinerEmail.ToLower());
+
+                    _logger.LogInformation($"Looking for examiner with email: {examinerEmail}");
+
+                    if (examiner != null)
+                    {
+                        _logger.LogInformation($"Found examiner: {examiner.Name} (ID: {examiner.Id})");
+
+                        var respondedBookingIds = await _context.ExaminerResponses
+                            .Where(r => r.ExaminerId == examiner.Id)
+                            .Select(r => r.BookingRequestId)
+                            .ToListAsync();
+
+                        _logger.LogInformation($"Examiner {examiner.Name} responded to {respondedBookingIds.Count} bookings: [{string.Join(", ", respondedBookingIds)}]");
+
+                        if (respondedBookingIds.Any())
+                        {
+                            query = query.Where(b => !respondedBookingIds.Contains(b.Id));
+                            _logger.LogInformation($"Filtered out {respondedBookingIds.Count} bookings examiner already responded to");
+                        }
+                    }
+                    else
+                    {
+                        _logger.LogWarning($"No examiner found with email: {examinerEmail}");
+                        // Якщо екзаменатора не знайдено, показуємо всі доступні букінги
+                    }
+                }
+
+                var totalCount = await query.CountAsync();
+                _logger.LogInformation($"Total bookings after all filters: {totalCount}");
+
+                var bookings = await query
+                    .OrderBy(b => b.PreferredDate)
+                    .Take(20)
+                    .Select(b => new
+                    {
+                        BookingId = $"BK{b.Id:D6}",
+                        StudentName = $"{b.StudentFirstName} {b.StudentLastName}",
+                        ExamType = b.ExamType,
+                        Location = b.StudentAddress,
+                        PreferredDate = b.PreferredDate,
+                        SpecialRequirements = b.SpecialRequirements,
+                        CreatedAt = b.CreatedAt,
+                        DaysWaiting = (int)(DateTime.UtcNow - b.CreatedAt).TotalDays
+                    })
+                    .ToListAsync();
+
+                _logger.LogInformation($"Returning {bookings.Count} bookings");
+
+                return Ok(bookings);
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Error getting available bookings for examiner");
+                return StatusCode(500, "Failed to retrieve available bookings");
+            }
+        }
 
         [HttpPost("fix/{bookingId}")]
         public async Task<ActionResult> FixBooking(string bookingId)
@@ -568,29 +683,27 @@ namespace ExamBookingSystem.Controllers
                 if (!bookingId.StartsWith("BK") || !int.TryParse(bookingId.Substring(2), out int id))
                     return BadRequest("Invalid booking ID");
 
-                using (var scope = HttpContext.RequestServices.CreateScope())
+                using var scope = HttpContext.RequestServices.CreateScope();
+                var context = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+
+                var booking = await context.BookingRequests.FirstOrDefaultAsync(b => b.Id == id);
+                if (booking == null)
+                    return NotFound("Booking not found");
+
+                booking.AssignedExaminerId = null;
+                booking.Status = Models.BookingStatus.ExaminersContacted;
+                booking.ScheduledDate = null;
+                booking.ScheduledTime = null;
+                booking.UpdatedAt = DateTime.UtcNow;
+
+                await context.SaveChangesAsync();
+
+                return Ok(new
                 {
-                    var context = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
-
-                    var booking = await context.BookingRequests.FirstOrDefaultAsync(b => b.Id == id);
-                    if (booking == null)
-                        return NotFound("Booking not found");
-
-                    booking.AssignedExaminerId = null;
-                    booking.Status = ExamBookingSystem.Models.BookingStatus.ExaminersContacted;
-                    booking.ScheduledDate = null;
-                    booking.ScheduledTime = null;
-                    booking.UpdatedAt = DateTime.UtcNow;
-
-                    await context.SaveChangesAsync();
-
-                    return Ok(new
-                    {
-                        message = "Booking reset successfully",
-                        status = booking.Status.ToString(),
-                        assignedExaminerId = booking.AssignedExaminerId
-                    });
-                }
+                    message = "Booking reset successfully",
+                    status = booking.Status.ToString(),
+                    assignedExaminerId = booking.AssignedExaminerId
+                });
             }
             catch (Exception ex)
             {

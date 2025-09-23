@@ -1,5 +1,5 @@
 ﻿const API_BASE = '/api';
-const stripe = Stripe('pk_test_51S7ZSCLSumIf2sloNewlIWsGz6Mbm4GnB8e3DQvX32MP99eneIFrhv5OxtL75yvvzoOa8etP8HHzVhs7zfAOZY8d00B8XsRw0o');
+const stripe = Stripe('pk_test_51Ri7PbECQKRSCDpzi5n5B0oclWVCPAbT32F1v3zEIooF0avPQTX2XWsjsTkF2sTPQgWnGIl8Ovd08JEUNxWUcEie00u5qO5lpt');
 
 document.getElementById('bookingForm').addEventListener('submit', async (e) => {
     e.preventDefault();
@@ -18,26 +18,64 @@ document.getElementById('bookingForm').addEventListener('submit', async (e) => {
     submitText.textContent = 'Processing...';
     loadingSpinner.classList.remove('d-none');
 
+    // Collect form data with new fields
+    const asapChecked = document.getElementById('asapCheckbox').checked;
+    const startDate = document.getElementById('startDate').value;
+    const endDate = document.getElementById('endDate').value;
+
     const formData = {
         studentFirstName: document.getElementById('firstName').value,
         studentLastName: document.getElementById('lastName').value,
         studentEmail: document.getElementById('email').value,
-        studentPhone: document.getElementById('phone').value,
+        studentPhone: document.getElementById('countryCode').value + document.getElementById('phone').value.replace(/\D/g, ''),
 
-        // Нові авіаційні поля
+        // Aircraft and exam info
         aircraftType: document.getElementById('aircraftType').value,
         checkRideType: document.getElementById('checkRideType').value,
         preferredAirport: document.getElementById('preferredAirport').value,
         searchRadius: parseInt(document.getElementById('searchRadius').value) || 50,
         willingToFly: document.getElementById('willingToFly').checked,
 
-        // Старі поля для сумісності з PaymentController
+        // New availability window fields
+        dateOption: asapChecked ? "ASAP" : "DATE_RANGE",
+        startDate: asapChecked ? new Date().toISOString() : (startDate ? new Date(startDate).toISOString() : new Date().toISOString()),
+        endDate: asapChecked ? new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString() : (endDate ? new Date(endDate).toISOString() : new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString()),
+
+        // New additional fields
+        ftnNumber: document.getElementById('ftnNumber').value || '',
+        examId: document.getElementById('examId').value || '',
+        additionalNotes: document.getElementById('additionalNotes').value || '',
+
+        // Legacy compatibility fields
         studentAddress: document.getElementById('preferredAirport').value,
         examType: document.getElementById('checkRideType').value,
-        preferredDate: new Date().toISOString(),
+        preferredDate: asapChecked ? new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString() : (startDate ? new Date(startDate).toISOString() : new Date().toISOString()),
         preferredTime: '10:00',
-        specialRequirements: document.getElementById('additionalNotes')?.value || ''
+        specialRequirements: document.getElementById('additionalNotes').value || ''
     };
+
+    // Перевірка наявності всіх полів
+    const requiredFields = {
+        firstName: document.getElementById('firstName')?.value,
+        lastName: document.getElementById('lastName')?.value,
+        email: document.getElementById('email')?.value,
+        aircraftType: document.getElementById('aircraftType')?.value,
+        checkRideType: document.getElementById('checkRideType')?.value,
+        preferredAirport: document.getElementById('preferredAirport')?.value
+    };
+
+    console.log('Required fields check:', requiredFields);
+
+    // Якщо якесь поле відсутнє
+    for (const [field, value] of Object.entries(requiredFields)) {
+        if (!value) {
+            console.error(`Missing required field: ${field}`);
+            alert(`Please fill in: ${field}`);
+            return;
+        }
+    }
+
+    console.log('Form data being sent:', formData);
 
     try {
         const response = await fetch(`${API_BASE}/Payment/create-checkout-session`, {
@@ -50,13 +88,15 @@ document.getElementById('bookingForm').addEventListener('submit', async (e) => {
 
         if (response.ok) {
             const result = await response.json();
-
+            console.log('Checkout session created:', result);
             window.location.href = result.url;
         } else {
             const error = await response.text();
+            console.error('Checkout session error:', error);
             showError(error);
         }
     } catch (error) {
+        console.error('Network error:', error);
         showError('Network error. Please check your connection.');
     } finally {
         submitBtn.disabled = false;
@@ -154,6 +194,10 @@ function createNewBooking() {
     document.getElementById('studentForm').classList.remove('d-none');
     document.getElementById('successMessage').classList.add('d-none');
     document.getElementById('errorMessage').classList.add('d-none');
+
+    // Reset ASAP checkbox to checked
+    document.getElementById('asapCheckbox').checked = true;
+    toggleDateRange();
 }
 
 function retryBooking() {
@@ -229,7 +273,84 @@ function getStatusBadge(status) {
     return badges[status] || `<span class="badge bg-secondary">${status}</span>`;
 }
 
-const tomorrow = new Date();
-tomorrow.setDate(tomorrow.getDate() + 1);
-tomorrow.setHours(10, 0, 0, 0);
-const dateStr = tomorrow.toISOString().slice(0, 16);
+// Додайте цю функцію в кінець файлу:
+async function loadFilteredBookings() {
+    const email = document.getElementById('examinerEmailFilter').value;
+    const examType = document.getElementById('examTypeFilter').value;
+    const state = document.getElementById('stateFilter').value;
+    const dateFrom = document.getElementById('dateFromFilter').value;
+
+    if (!email) {
+        alert('Please enter your email address');
+        return;
+    }
+
+    const params = new URLSearchParams();
+    if (email) params.append('examinerEmail', email);
+    if (examType) params.append('examType', examType);
+    if (state) params.append('state', state);
+    if (dateFrom) params.append('dateFrom', dateFrom);
+
+    const listDiv = document.getElementById('availableBookingsList');
+    listDiv.innerHTML = '<div class="spinner-border"></div> Loading...';
+
+    try {
+        const response = await fetch(`${API_BASE}/Booking/available-for-examiner?${params}`);
+        if (response.ok) {
+            const bookings = await response.json();
+
+            if (bookings.length === 0) {
+                listDiv.innerHTML = '<p class="text-muted">No available bookings match your criteria</p>';
+                return;
+            }
+
+            let html = '<div class="table-responsive"><table class="table table-hover">';
+            html += `<thead>
+                <tr>
+                    <th>Booking ID</th>
+                    <th>Student</th>
+                    <th>Exam Type</th>
+                    <th>Location</th>
+                    <th>Preferred Date</th>
+                    <th>Days Waiting</th>
+                    <th>Action</th>
+                </tr>
+            </thead><tbody>`;
+
+            bookings.forEach(booking => {
+                html += `
+                    <tr>
+                        <td><code>${booking.bookingId}</code></td>
+                        <td>${booking.studentName}</td>
+                        <td><span class="badge bg-info">${booking.examType}</span></td>
+                        <td>${booking.location}</td>
+                        <td>${new Date(booking.preferredDate).toLocaleDateString()}</td>
+                        <td><span class="badge ${booking.daysWaiting > 3 ? 'bg-warning' : 'bg-secondary'}">${booking.daysWaiting} days</span></td>
+                        <td>
+                            <button class="btn btn-sm btn-success" 
+                                onclick="fillResponseForm('${booking.bookingId}', '${booking.studentName.replace(/'/g, "\\'")}')">
+                                Respond
+                            </button>
+                        </td>
+                    </tr>`;
+            });
+
+            html += '</tbody></table></div>';
+            listDiv.innerHTML = html;
+        } else {
+            listDiv.innerHTML = '<div class="alert alert-danger">Failed to load bookings</div>';
+        }
+    } catch (error) {
+        listDiv.innerHTML = '<div class="alert alert-danger">Network error</div>';
+    }
+}
+
+// Додайте функцію для заповнення форми відповіді:
+function fillResponseForm(bookingId, studentName) {
+    document.getElementById('bookingId').value = bookingId;
+    document.getElementById('studentName').value = studentName;
+    document.getElementById('examinerEmail').focus();
+
+    // Scroll to response form
+    document.querySelector('.card-header.bg-gradient-info').scrollIntoView({ behavior: 'smooth' });
+}

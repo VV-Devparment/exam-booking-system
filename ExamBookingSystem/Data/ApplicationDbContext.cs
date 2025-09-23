@@ -15,7 +15,7 @@ namespace ExamBookingSystem.Data
         public DbSet<ActionLog> ActionLogs { get; set; }
         public DbSet<Administrator> Administrators { get; set; }
 
-        
+
 
         protected override void OnModelCreating(ModelBuilder modelBuilder)
         {
@@ -62,6 +62,7 @@ namespace ExamBookingSystem.Data
                 entity.HasIndex(e => e.Email).IsUnique();
                 entity.HasIndex(e => e.Phone);
             });
+
             // ExaminerResponse конфігурація
             modelBuilder.Entity<ExaminerResponse>(entity =>
             {
@@ -118,5 +119,6 @@ namespace ExamBookingSystem.Data
             return await Examiners
                 .FirstOrDefaultAsync(e => e.Email.ToLower() == email.ToLower());
         }
+
     }
 }
